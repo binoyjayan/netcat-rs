@@ -1,5 +1,7 @@
 [package]
 name = "netcat"
+authors = ["Binoy Jayan <binoyjayan@gmail.com>"]
+description = "A simple netcat clone in Rust"
 version = "0.1.0"
 edition = "2021"
 
