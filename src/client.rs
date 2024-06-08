@@ -10,19 +10,19 @@ pub async fn client(addr: &str, port: u16) -> io::Result<()> {
     let mut stdin = tokio::io::stdin();
     let mut stdout = tokio::io::stdout();
 
-    // Stream data from stdin to the network stream
-    let client_read = tokio::spawn(async move {
-        tokio::io::copy(&mut stdin, &mut writer).await.unwrap();
-    });
-
-    // Stream data from network to stdout
-    let client_write = tokio::spawn(async move {
+    // Stream data from the server stream to stdout
+    let client_reader = tokio::spawn(async move {
         tokio::io::copy(&mut reader, &mut stdout).await.unwrap();
     });
 
+    // Stream data from stdin to the server stream
+    let client_writer = tokio::spawn(async move {
+        tokio::io::copy(&mut stdin, &mut writer).await.unwrap();
+    });
+
     tokio::select! {
-        _ = client_read => { eprintln!("Connection closed"); }
-        _ = client_write => { eprintln!("Connection closed"); }
+        _ = client_reader => { eprintln!("Connection closed"); }
+        _ = client_writer => { eprintln!("Connection closed"); }
     }
 
     Ok(())

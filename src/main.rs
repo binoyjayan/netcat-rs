@@ -15,8 +15,7 @@ struct Cli {
     port: Option<u16>,
 }
 
-#[tokio::main]
-async fn main() {
+fn main() {
     let cli = Cli::parse();
     let (addr, port) = if let Some(port) = cli.listen {
         // If listen address is not provided, use localhost
@@ -34,18 +33,39 @@ async fn main() {
         (cli.addr.unwrap(), cli.port.unwrap())
     };
 
+    let runtime = tokio::runtime::Runtime::new().unwrap();
+
     if cli.listen.is_some() {
         println!("Listening on {}:{}", addr, port);
-        let r = server::server(&addr, port).await;
-        match r {
-            Ok(_) => {}
-            Err(e) => eprintln!("{}:{} - {}", addr, port, e),
-        }
+        // let r = server::server(&addr, port).await;
+        runtime.block_on(async {
+            tokio::select! {
+                r = server::server(&addr, port) => {
+                    match r {
+                        Ok(_) => {}
+                        Err(e) => eprintln!("{}:{} - {}", addr, port, e),
+                    }
+                }
+                _ = tokio::signal::ctrl_c() => {}
+            }
+        });
     } else {
-        let r = client::client(&addr, port).await;
-        match r {
-            Ok(_) => {}
-            Err(e) => eprintln!("{}:{} - {}", addr, port, e),
-        }
+        // let r = client::client(&addr, port).await;
+        runtime.block_on(async {
+            tokio::select! {
+                r = client::client(&addr, port) => {
+                    match r {
+                        Ok(_) => {}
+                        Err(e) => eprintln!("{}:{} - {}", addr, port, e),
+                    }
+                }
+                _ = tokio::signal::ctrl_c() => {}
+            }
+        });
     }
+    // Shutdown the runtime immediately after the client or server is done
+    // The shutdown is required to prevent the runtime from waiting on the
+    // stdin or stdout to be closed even after the client or server has
+    // disconnected.
+    runtime.shutdown_timeout(tokio::time::Duration::from_secs(0));
 }
