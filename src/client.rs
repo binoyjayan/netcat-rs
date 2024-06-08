@@ -2,7 +2,7 @@ use std::io;
 
 /// Client that connect to a TCP server and stream data
 /// from stdin to the server and from the server to stdout
-pub async fn client(addr: &str, port: u16) -> io::Result<()> {
+pub async fn tcp_client(addr: &str, port: u16) -> io::Result<()> {
     let conn = format!("{}:{}", addr, port);
     let stream = tokio::net::TcpStream::connect(conn).await?;
     // Get reader and writer from the stream

@@ -2,7 +2,7 @@ use std::io;
 
 /// Server that listens on a port and streams data
 /// from stdin to the client and from the client to stdout
-pub async fn server(addr: &str, port: u16) -> io::Result<()> {
+pub async fn tcp_server(addr: &str, port: u16) -> io::Result<()> {
     let conn = format!("{}:{}", addr, port);
     let listener = tokio::net::TcpListener::bind(conn).await?;
     let (stream, addr) = listener.accept().await?;
