@@ -7,7 +7,7 @@ mod server;
 #[command(name = "netcat", author, version = "1.0", long_about)]
 struct Cli {
     /// Listen on a port
-    #[arg(short, long)]
+    #[arg(short, long, conflicts_with = "port", value_name = "port")]
     listen: Option<u16>,
     /// Address to connect or listen
     addr: Option<String>,
@@ -15,7 +15,8 @@ struct Cli {
     port: Option<u16>,
 }
 
-fn main() {
+#[tokio::main]
+async fn main() {
     let cli = Cli::parse();
     let (addr, port) = if let Some(port) = cli.listen {
         // If listen address is not provided, use localhost
@@ -34,15 +35,16 @@ fn main() {
     };
 
     if cli.listen.is_some() {
-        let r = server::run(&addr, port);
+        println!("Listening on {}:{}", addr, port);
+        let r = server::server(&addr, port).await;
         match r {
-            Ok(_) => println!("Listening on {}:{}", addr, port),
+            Ok(_) => {}
             Err(e) => eprintln!("{}:{} - {}", addr, port, e),
         }
     } else {
-        let r = client::run(&addr, port);
+        let r = client::client(&addr, port).await;
         match r {
-            Ok(_) => println!("Connected!"),
+            Ok(_) => {}
             Err(e) => eprintln!("{}:{} - {}", addr, port, e),
         }
     }

@@ -1,35 +1,31 @@
-use std::io::{self, stdout, Read, Write};
-use std::net;
-use std::net::TcpListener;
+use std::io;
 
-pub fn run(addr: &str, port: u16) -> io::Result<()> {
-    let listener = TcpListener::bind((addr, port))?;
-    for stream in listener.incoming() {
-        match stream {
-            Ok(stream) => {
-                handle_client(stream)?;
-            }
-            Err(e) => {
-                eprintln!("Error: {}", e);
-            }
-        }
+/// Server that listens on a port and streams data
+/// from stdin to the client and from the client to stdout
+pub async fn server(addr: &str, port: u16) -> io::Result<()> {
+    let conn = format!("{}:{}", addr, port);
+    let listener = tokio::net::TcpListener::bind(conn).await?;
+    let (stream, addr) = listener.accept().await?;
+
+    // Get reader and writer from the stream
+    let (mut reader, mut writer) = stream.into_split();
+    let mut stdin = tokio::io::stdin();
+    let mut stdout = tokio::io::stdout();
+
+    // Stream data from stdin to the network stream
+    let client_read = tokio::spawn(async move {
+        tokio::io::copy(&mut stdin, &mut writer).await.unwrap();
+    });
+
+    // Stream data from network to stdout
+    let client_write = tokio::spawn(async move {
+        tokio::io::copy(&mut reader, &mut stdout).await.unwrap();
+    });
+
+    tokio::select! {
+        _ = client_read => { eprintln!("Client {} closed", addr); }
+        _ = client_write => { eprintln!("Client {} closed", addr); }
     }
 
-    Ok(())
-}
-
-pub fn handle_client(mut stream: net::TcpStream) -> io::Result<()> {
-    println!("Connection from: {}", stream.peer_addr()?);
-    let mut buf = [0; 1024];
-    loop {
-        let nbytes = stream.read(&mut buf)?;
-        if nbytes == 0 {
-            break;
-        }
-        stream.write_all(&buf[..nbytes])?;
-        stdout().write_all(buf[..nbytes].as_ref())?;
-    }
-    println!("Connection from {} closed", stream.peer_addr()?);
-    let _ = stream.shutdown(net::Shutdown::Both);
     Ok(())
 }
