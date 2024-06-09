@@ -1,7 +1,6 @@
 use rustls::pki_types;
 use std::{io, sync};
 use tokio_rustls::rustls;
-use webpki_roots;
 
 use crate::common::read_write;
 
@@ -34,7 +33,7 @@ pub async fn tls_server(
     }
 
     let certs = load_certs(cert_file).await?;
-    let key = load_keys(key_file).await?;
+    let key = load_key(key_file).await?;
 
     let config = rustls::ServerConfig::builder()
         .with_no_client_auth()
@@ -98,7 +97,20 @@ async fn load_certs(path: &str) -> io::Result<Vec<pki_types::CertificateDer<'sta
     rustls_pemfile::certs(&mut cursor).collect()
 }
 
-async fn load_keys(path: &str) -> io::Result<pki_types::PrivateKeyDer<'static>> {
+async fn load_key(path: &str) -> io::Result<pki_types::PrivateKeyDer<'static>> {
+    let data = tokio::fs::read(path).await?;
+    let mut cursor = std::io::Cursor::new(data);
+    let key = rustls_pemfile::private_key(&mut cursor)?;
+    match key {
+        Some(key) => Ok(key),
+        None => {
+            let msg = format!("no keys found in the provided file {}", path);
+            Err(io::Error::new(io::ErrorKind::InvalidData, msg))
+        }
+    }
+}
+
+async fn _load_key(path: &str) -> io::Result<pki_types::PrivateKeyDer<'static>> {
     let data = tokio::fs::read(path).await?;
     let mut cursor = std::io::Cursor::new(data);
     // Iterate over RSA private keys in the PEM file

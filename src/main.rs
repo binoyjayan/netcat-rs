@@ -80,7 +80,7 @@ fn main() {
                     r = tls::tls_server(&addr, port, ca.as_deref(), &cert, &key) => {
                         match r {
                             Ok(_) => {}
-                            Err(e) => eprintln!("Err: {}", e),
+                            Err(e) => eprintln!("Error: {}", e),
                         }
                     }
                     _ = tokio::signal::ctrl_c() => {}
@@ -93,7 +93,7 @@ fn main() {
                     r = server::tcp_server(&addr, port) => {
                         match r {
                             Ok(_) => {}
-                            Err(e) => eprintln!("Err: {}", e),
+                            Err(e) => eprintln!("Error: {}", e),
                         }
                     }
                     _ = tokio::signal::ctrl_c() => {}

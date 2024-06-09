@@ -15,18 +15,35 @@ where
     let mut stdout = tokio::io::stdout();
 
     // Stream data from the server or client stream to stdout
-    let stream_reader = tokio::spawn(async move {
-        tokio::io::copy(&mut reader, &mut stdout).await.unwrap();
-    });
+    let stream_reader =
+        tokio::spawn(async move { tokio::io::copy(&mut reader, &mut stdout).await });
 
     // Stream data from stdin to the server or client stream
-    let stream_writer = tokio::spawn(async move {
-        tokio::io::copy(&mut stdin, &mut writer).await.unwrap();
-    });
+    let stream_writer = tokio::spawn(async move { tokio::io::copy(&mut stdin, &mut writer).await });
 
     tokio::select! {
-        _ = stream_reader => { eprintln!("Connection closed"); }
-        _ = stream_writer => { eprintln!("Connection closed"); }
+        res = stream_reader => {
+            match res {
+                Ok(Ok(_)) => (),
+                Ok(Err(err)) => {
+                    return Err(err);
+                },
+                Err(err) => {
+                    return Err(io::Error::new(io::ErrorKind::Other, err));
+                }
+            }
+        },
+        res = stream_writer => {
+            match res {
+                Ok(Ok(_)) => (),
+                Ok(Err(err)) => {
+                    return Err(err);
+                },
+                Err(err) => {
+                    return Err(io::Error::new(io::ErrorKind::Other, err));
+                }
+            }
+        }
     }
     Ok(())
 }
