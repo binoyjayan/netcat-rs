@@ -6,8 +6,11 @@ mod server;
 mod tls;
 
 #[derive(Parser, Debug)]
-#[command(name = "netcat", author, version = "1.0", long_about)]
+#[command(name = "netcat", author, version, long_about)]
 struct Cli {
+    /// Flag to use UDP
+    #[arg(short, long)]
+    udp: bool,
     /// Listen on a port
     #[arg(short, long, conflicts_with = "port", value_name = "port")]
     listen: Option<u16>,
@@ -16,7 +19,7 @@ struct Cli {
     /// Port to connect
     port: Option<u16>,
     /// certificate authority file
-    #[arg(short = 'C', long, value_name = "file")]
+    #[arg(short = 'C', long, value_name = "file", conflicts_with = "udp")]
     ca: Option<String>,
     /// certificate file, use only with server
     #[arg(
@@ -24,7 +27,8 @@ struct Cli {
         long,
         value_name = "file",
         requires = "key",
-        requires = "listen"
+        requires = "listen",
+        conflicts_with = "udp"
     )]
     cert: Option<String>,
     /// private key file
@@ -33,7 +37,8 @@ struct Cli {
         long,
         value_name = "file",
         requires = "cert",
-        requires = "listen"
+        requires = "listen",
+        conflicts_with = "udp"
     )]
     key: Option<String>,
 }
@@ -66,6 +71,7 @@ fn main() {
     } else {
         false
     };
+    let udp = cli.udp;
 
     let runtime = tokio::runtime::Runtime::new().unwrap();
 
@@ -78,6 +84,19 @@ fn main() {
                 let key = cli.key.unwrap();
                 tokio::select! {
                     r = tls::tls_server(&addr, port, ca.as_deref(), &cert, &key) => {
+                        match r {
+                            Ok(_) => {}
+                            Err(e) => eprintln!("Error: {}", e),
+                        }
+                    }
+                    _ = tokio::signal::ctrl_c() => {}
+                }
+            });
+        } else if udp {
+            println!("Listening on {}:{} over UDP", addr, port);
+            runtime.block_on(async {
+                tokio::select! {
+                    r = server::udp_server(&addr, port) => {
                         match r {
                             Ok(_) => {}
                             Err(e) => eprintln!("Error: {}", e),
@@ -102,6 +121,7 @@ fn main() {
         }
     } else {
         if tls {
+            println!("Connecting to {}:{} over TLS", addr, port);
             runtime.block_on(async {
                 let ca = cli.ca.clone();
                 tokio::select! {
@@ -114,7 +134,21 @@ fn main() {
                     _ = tokio::signal::ctrl_c() => {}
                 }
             });
+        } else if udp {
+            println!("Connecting to {}:{} over UDP", addr, port);
+            runtime.block_on(async {
+                tokio::select! {
+                    r = client::udp_client(&addr, port) => {
+                        match r {
+                            Ok(_) => {}
+                            Err(e) => eprintln!("Err: {}", e),
+                        }
+                    }
+                    _ = tokio::signal::ctrl_c() => {}
+                }
+            });
         } else {
+            println!("Connecting to {}:{}", addr, port);
             runtime.block_on(async {
                 tokio::select! {
                     r = client::tcp_client(&addr, port) => {
