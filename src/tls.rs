@@ -1,4 +1,4 @@
-use rustls::pki_types;
+use rustls::{pki_types, server};
 use std::{io, sync};
 use tokio_rustls::rustls;
 
@@ -8,8 +8,9 @@ pub async fn tls_server(
     host: &str,
     port: u16,
     cafile: Option<&str>,
-    cert_file: &str,
     key_file: &str,
+    cert_file: &str,
+    client_auth: bool,
 ) -> io::Result<()> {
     let addr = format!("{}:{}", host, port);
 
@@ -35,10 +36,22 @@ pub async fn tls_server(
     let certs = load_certs(cert_file).await?;
     let key = load_key(key_file).await?;
 
-    let config = rustls::ServerConfig::builder()
-        .with_no_client_auth()
-        .with_single_cert(certs, key)
-        .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e))?;
+    let config = if client_auth {
+        // Create a client verifier that uses the root certificate store
+        let verifier = server::WebPkiClientVerifier::builder(sync::Arc::new(root_cert_store))
+            .build()
+            .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e))?;
+
+        rustls::ServerConfig::builder()
+            .with_client_cert_verifier(verifier)
+            .with_single_cert(certs, key)
+            .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e))?
+    } else {
+        rustls::ServerConfig::builder()
+            .with_no_client_auth()
+            .with_single_cert(certs, key)
+            .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e))?
+    };
 
     let acceptor = tokio_rustls::TlsAcceptor::from(sync::Arc::new(config));
     let listener = tokio::net::TcpListener::bind(&addr).await?;
@@ -54,7 +67,13 @@ pub async fn tls_server(
 
 /// establishes a TLS (Transport Layer Security) connection to a specified
 /// host and port, with an optional custom certificate authority (CA)
-pub async fn tls_client(host: &str, port: u16, ca: Option<&str>) -> io::Result<()> {
+pub async fn tls_client(
+    host: &str,
+    port: u16,
+    ca: Option<&str>,
+    client_key: Option<&str>,
+    client_cert: Option<&str>,
+) -> io::Result<()> {
     let addr = format!("{}:{}", host, port);
 
     // Create a new empty root certificate store
@@ -72,9 +91,18 @@ pub async fn tls_client(host: &str, port: u16, ca: Option<&str>) -> io::Result<(
         root_cert_store.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
     }
 
-    let config = rustls::ClientConfig::builder()
-        .with_root_certificates(root_cert_store)
-        .with_no_client_auth();
+    let config = if let (Some(key_file), Some(cert_file)) = (client_key, client_cert) {
+        let key = load_key(key_file).await?;
+        let certs = load_certs(cert_file).await?;
+        rustls::ClientConfig::builder()
+            .with_root_certificates(root_cert_store)
+            .with_client_auth_cert(certs, key)
+            .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e))?
+    } else {
+        rustls::ClientConfig::builder()
+            .with_root_certificates(root_cert_store)
+            .with_no_client_auth()
+    };
 
     let connector = tokio_rustls::TlsConnector::from(sync::Arc::new(config));
     let server_name = host.to_string().try_into().unwrap();

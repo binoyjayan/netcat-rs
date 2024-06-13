@@ -21,26 +21,33 @@ struct Cli {
     /// certificate authority file
     #[arg(short = 'C', long, value_name = "file", conflicts_with = "udp")]
     ca: Option<String>,
-    /// certificate file, use only with server
-    #[arg(
-        short = 'c',
-        long,
-        value_name = "file",
-        requires = "key",
-        requires = "listen",
-        conflicts_with = "udp"
-    )]
-    cert: Option<String>,
-    /// private key file
+    /// private key file, optional for client
     #[arg(
         short,
         long,
-        value_name = "file",
+        value_name = "keyfile",
         requires = "cert",
-        requires = "listen",
         conflicts_with = "udp"
     )]
     key: Option<String>,
+    /// certificate file, optional for client
+    #[arg(
+        short = 'c',
+        long,
+        value_name = "certfile",
+        requires = "key",
+        conflicts_with = "udp"
+    )]
+    cert: Option<String>,
+    /// Flag to enable client verification (mTLS)
+    #[arg(
+        long,
+        requires = "listen",
+        requires = "cert",
+        requires = "key",
+        conflicts_with = "udp"
+    )]
+    client_auth: bool,
 }
 
 fn main() {
@@ -62,28 +69,36 @@ fn main() {
     };
 
     // Check if TLS is enabled
-    let tls = if cli.ca.is_some() || cli.cert.is_some() && cli.key.is_some() {
-        if cli.listen.is_some() && (cli.ca.is_none() || cli.cert.is_none() && cli.key.is_none()) {
-            eprintln!("TLS requires CA, cert and key");
-            return;
-        }
-        true
+    let tls = if cli.listen.is_some() {
+        cli.key.is_some() && cli.cert.is_some()
     } else {
-        false
+        // key and cert is optional for client
+        cli.ca.is_some()
     };
     let udp = cli.udp;
 
     let runtime = tokio::runtime::Runtime::new().unwrap();
 
+    #[allow(clippy::collapsible_else_if)]
     if cli.listen.is_some() {
         if tls {
-            println!("Listening on {}:{} over TLS", addr, port);
+            if cli.client_auth {
+                println!(
+                    "Listening on {}:{} over mTLS [client verification on]",
+                    addr, port
+                );
+            } else {
+                println!(
+                    "Listening on {}:{} over TLS [client verification off]",
+                    addr, port
+                );
+            }
             runtime.block_on(async {
                 let ca = cli.ca.clone();
-                let cert = cli.cert.unwrap();
                 let key = cli.key.unwrap();
+                let cert = cli.cert.unwrap();
                 tokio::select! {
-                    r = tls::tls_server(&addr, port, ca.as_deref(), &cert, &key) => {
+                    r = tls::tls_server(&addr, port, ca.as_deref(), &key, &cert, cli.client_auth) => {
                         match r {
                             Ok(_) => {}
                             Err(e) => eprintln!("Error: {}", e),
@@ -121,11 +136,22 @@ fn main() {
         }
     } else {
         if tls {
-            println!("Connecting to {}:{} over TLS", addr, port);
+            if cli.key.is_some() && cli.cert.is_some() {
+                println!(
+                    "Connecting to {}:{} over mTLS [client verification on]",
+                    addr, port
+                );
+            } else {
+                println!(
+                    "Connecting to {}:{} over TLS [client verification off]",
+                    addr, port
+                );
+            }
+
             runtime.block_on(async {
                 let ca = cli.ca.clone();
                 tokio::select! {
-                    r = tls::tls_client(&addr, port, ca.as_deref()) => {
+                    r = tls::tls_client(&addr, port, ca.as_deref(), cli.key.as_deref(), cli.cert.as_deref()) => {
                         match r {
                             Ok(_) => {}
                             Err(e) => eprintln!("Err: {}", e),

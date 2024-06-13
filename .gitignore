@@ -1,7 +1,9 @@
 /target
 .ca-key.pem
-.ca.csr
 .ca.pem
 .server-key.pem
 .server.csr
 .server.pem
+.client-key.pem
+.client.csr
+.client.pem
