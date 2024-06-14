@@ -1,4 +1,4 @@
-use tokio::io::{self, AsyncRead, AsyncWrite};
+use tokio::io::{self, AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 
 /// Generic function to stream data from a reader to a writer
 /// This function is used by both the client and server
@@ -45,5 +45,75 @@ where
             }
         }
     }
+    Ok(())
+}
+
+/// Generic function to exec a shell command and stream data from a reader to a writer
+pub async fn read_write_exec<R, W>(mut reader: R, mut writer: W, cmd: &str) -> io::Result<()>
+where
+    R: AsyncRead + Unpin + Send + 'static,
+    W: AsyncWrite + Unpin + Send + 'static,
+{
+    let child = tokio::process::Command::new(cmd)
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+
+    let mut stdin = child.stdin.unwrap();
+    let mut stdout = child.stdout.unwrap();
+    let mut stderr = child.stderr.unwrap();
+
+    // Stream stdout and stderr output of command to the client
+    let mut stdout_buf = vec![0u8; 1024];
+    let mut stderr_buf = vec![0u8; 1024];
+    // Buffer to receive data from the client
+    let mut recv_buf = vec![0u8; 1024];
+
+    loop {
+        tokio::select! (
+            // Read data from the stdout of the command and write to the client
+            res = stdout.read(&mut stdout_buf) => {
+                match res {
+                    Ok(nbytes) => {
+                        if nbytes == 0 {
+                            break;
+                        }
+                        let _ = writer.write(&stdout_buf[..nbytes]).await?;
+                    }
+                    Err(e) => {
+                        return Err(io::Error::new(io::ErrorKind::Other, e));
+                    }
+                }
+            }
+            // Read data from the stderr of the command and write to the client
+            res = stderr.read(&mut stderr_buf) => {
+                match res {
+                    Ok(nbytes) => {
+                        if nbytes == 0 {
+                            break;
+                        }
+                        let _ = writer.write(&stderr_buf[..nbytes]).await?;
+                    }
+                    Err(e) => {
+                        return Err(io::Error::new(io::ErrorKind::Other, e));
+                    }
+                }
+            }
+            // Read data from the client and write to the stdin of the command
+            res = reader.read(&mut recv_buf) => {
+                match res {
+                    Ok(nbytes) => {
+                        let _ = stdin.write(&recv_buf[..nbytes]).await?;
+                    }
+                    Err(e) => {
+                        return Err(io::Error::new(io::ErrorKind::Other, e));
+                    }
+                }
+            }
+        )
+    }
+
     Ok(())
 }

